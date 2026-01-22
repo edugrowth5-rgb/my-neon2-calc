@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    
+    <link rel="manifest" href="manifest.json">
+    
+    <title>Citizen Pro Calc</title>
+    
+    <style>
+        body { background-color: #121212; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: Arial, sans-serif; overflow: hidden; touch-action: manipulation; }
+        .calculator { background: #000; padding: 20px; border-radius: 25px; width: 90%; max-width: 380px; border: 3px solid #333; box-shadow: 0 20px 50px rgba(0,0,0,0.9); }
+        .display-container { position: relative; background: #1a1a1a; border: 2px solid #00ffcc; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 0 15px #00ffcc, inset 0 0 5px #00ffcc; }
+        #memory-indicator, #gt-indicator { position: absolute; top: 5px; font-size: 11px; font-weight: bold; visibility: hidden; }
+        #memory-indicator { left: 10px; color: #ff00ff; text-shadow: 0 0 5px #ff00ff; }
+        #gt-indicator { left: 35px; color: #33ff33; text-shadow: 0 0 5px #33ff33; }
+        #display { width: 100%; height: 80px; font-size: 38px; text-align: right; padding: 25px 15px 5px 15px; background: transparent; color: #00ffcc; border: none; outline: none; text-shadow: 0 0 10px #00ffcc; font-family: 'Courier New', Courier, monospace; box-sizing: border-box; }
+        .buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        button { height: 50px; font-size: 18px; cursor: pointer; border: none; border-radius: 10px; background-color: #222; color: white; transition: all 0.1s; font-weight: bold; -webkit-tap-highlight-color: transparent; }
+        button:active { transform: scale(0.92); filter: brightness(1.5); }
+        .btn-red { background: #ff4d4d; color: white; box-shadow: 0 0 8px #ff4d4d; }
+        .btn-gray { background: #1a1a1a; color: #cc66ff; border: 1px solid #cc66ff; box-shadow: 0 0 5px #cc66ff; }
+        .btn-orange { background: #1a1a1a; color: #ffa500; border: 1px solid #ffa500; box-shadow: 0 0 5px #ffa500; }
+        .btn-equal { background: #1a1a1a; color: #33ff33; border: 1px solid #33ff33; box-shadow: 0 0 12px #33ff33; }
+    </style>
+</head>
+<body>
+
+<div class="calculator">
+    <div class="display-container">
+        <span id="memory-indicator">M</span>
+        <span id="gt-indicator">GT</span>
+        <input type="text" id="display" value="0" readonly>
+    </div>
+    <div class="buttons">
+        <button class="btn-gray" onclick="playClick(); checkBackward()">◀ CHK</button>
+        <button class="btn-gray" onclick="playClick(); checkForward()">CHK ▶</button>
+        <button class="btn-orange" onclick="playClick(); markUP()">MU</button>
+        <button class="btn-red" onclick="playClick(); clearAll()">AC</button>
+        <button class="btn-gray" onclick="playClick(); scientific('sin')">sin</button>
+        <button class="btn-gray" onclick="playClick(); scientific('cos')">cos</button>
+        <button class="btn-gray" onclick="playClick(); scientific('tan')">tan</button>
+        <button class="btn-gray" onclick="playClick(); scientific('pi')">π</button>
+        <button class="btn-orange" onclick="playClick(); mPlusEqual()">M+=</button>
+        <button class="btn-orange" onclick="playClick(); mMinusEqual()">M-=</button>
+        <button class="btn-orange" onclick="playClick(); mCheck()">MRC</button>
+        <button class="btn-gray" onclick="playClick(); scientific('sqrt')">√</button>
+        <button class="btn-gray" onclick="playClick(); showGT()">GT</button>
+        <button class="btn-gray" onclick="playClick(); backspace()">⌫</button>
+        <button class="btn-gray" onclick="playClick(); plusMinus()">+/-</button>
+        <button class="btn-orange" onclick="playClick(); press('/')">÷</button>
+        <button onclick="playClick(); press('7')">7</button>
+        <button onclick="playClick(); press('8')">8</button>
+        <button onclick="playClick(); press('9')">9</button>
+        <button class="btn-orange" onclick="playClick(); press('*')">×</button>
+        <button onclick="playClick(); press('4')">4</button>
+        <button onclick="playClick(); press('5')">5</button>
+        <button onclick="playClick(); press('6')">6</button>
+        <button class="btn-orange" onclick="playClick(); press('-')">-</button>
+        <button onclick="playClick(); press('1')">1</button>
+        <button onclick="playClick(); press('2')">2</button>
+        <button onclick="playClick(); press('3')">3</button>
+        <button class="btn-orange" onclick="playClick(); press('+')">+</button>
+        <button onclick="playClick(); press('0')">0</button>
+        <button onclick="playClick(); press('00')">00</button>
+        <button onclick="playClick(); press('%')">%</button>
+        <button class="btn-equal" onclick="playClick(); calculate()">=</button>
+    </div>
+</div>
+
+<script>
+    // --- SERVICE WORKER REGISTRATION (OFFLINE SUPPORT) ---
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js')
+            .then(reg => console.log('Service Worker Registered!', reg))
+            .catch(err => console.error('SW Registration Failed:', err));
+        });
+    }
+
+    const screen = document.getElementById('display');
+    const mInd = document.getElementById('memory-indicator');
+    const gtInd = document.getElementById('gt-indicator');
+    let mMemory = 0; let gtMemory = 0; let history = []; let currentCheckIndex = -1; let shouldReset = false; let audioCtx = null;
+
+    async function playClick() {
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') await audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.04);
+        } catch(e) { console.log("Audio play failed"); }
+    }
+
+    function press(input) {
+        if (shouldReset) { screen.value = ""; shouldReset = false; }
+        if (screen.value === "0" && input !== "." && input !== "00") screen.value = "";
+        screen.value += input;
+    }
+
+    function backspace() { screen.value = screen.value.slice(0, -1); if (screen.value === "") screen.value = "0"; }
+
+    function calculate() {
+        if (screen.value === "0" || screen.value === "") return;
+        try {
+            let expression = screen.value;
+            let processedExp = expression.replace(/×/g, '*').replace(/÷/g, '/');
+            let result;
+            if (processedExp.includes('%')) {
+                let parts = processedExp.split(/([\+\-\*\/])/);
+                if (parts.length === 3) {
+                    let n1 = parseFloat(parts[0]), op = parts[1], n2 = parseFloat(parts[2]);
+                    if (op === '+') result = n1 + (n1 * n2 / 100);
+                    else if (op === '-') result = n1 - (n1 * n2 / 100);
+                    else if (op === '*') result = n1 * (n2 / 100);
+                    else if (op === '/') result = n1 / (n2 / 100);
+                } else { result = eval(processedExp.replace('%', '/100')); }
+            } else { result = eval(processedExp); }
+            
+            if(!isNaN(result)) {
+                history.push(expression + "=" + result);
+                gtMemory += result;
+                gtInd.style.visibility = "visible";
+                screen.value = result;
+                shouldReset = true;
+            }
+        } catch (e) { screen.value = "Error"; }
+    }
+
+    function showGT() { screen.value = (isNaN(gtMemory) || gtMemory === 0) ? "0" : gtMemory; shouldReset = true; }
+    function mCheck() { screen.value = (isNaN(mMemory) || mMemory === 0) ? "0" : mMemory.toString(); shouldReset = true; }
+    
+    function mPlusEqual() { calculate(); let val = parseFloat(screen.value); if(!isNaN(val)) mMemory += val; mInd.style.visibility = (mMemory !== 0) ? "visible" : "hidden"; shouldReset = true; }
+    
+    function mMinusEqual() { calculate(); let val = parseFloat(screen.value); if(!isNaN(val)) mMemory -= val; mInd.style.visibility = (mMemory !== 0) ? "visible" : "hidden"; shouldReset = true; }
+    
+    function markUP() { let parts = screen.value.split(/[\+\-\*\/]/); if (parts.length < 2) return; screen.value = (parseFloat(parts[0]) / (1 - parseFloat(parts[1])/100)).toFixed(2); shouldReset = true; }
+    
+    function checkForward() { if (history.length === 0) return; currentCheckIndex = (currentCheckIndex + 1) % history.length; screen.value = history[currentCheckIndex]; shouldReset = true; }
+    
+    function checkBackward() { if (history.length === 0) return; currentCheckIndex = (currentCheckIndex - 1 + history.length) % history.length; screen.value = history[currentCheckIndex]; shouldReset = true; }
+    
+    function scientific(type) {
+        let val = parseFloat(screen.value);
+        if (type === 'sin') screen.value = Math.sin(val * Math.PI / 180).toFixed(4);
+        else if (type === 'cos') screen.value = Math.cos(val * Math.PI / 180).toFixed(4);
+        else if (type === 'tan') screen.value = Math.tan(val * Math.PI / 180).toFixed(4);
+        else if (type === 'sqrt') screen.value = Math.sqrt(val).toFixed(4);
+        else if (type === 'pi') screen.value = Math.PI.toFixed(4);
+        shouldReset = true;
+    }
+    
+    function plusMinus() { screen.value = (parseFloat(screen.value) * -1).toString(); }
+    
+    function clearAll() { screen.value = "0"; gtMemory = 0; mMemory = 0; history = []; gtInd.style.visibility = "hidden"; mInd.style.visibility = "hidden"; shouldReset = false; }
+</script>
+</body>
+</html>
